@@ -7,10 +7,10 @@ import matplotlib.pyplot as plt
 st.set_page_config(page_title="Прогноз продаж", layout="wide")
 st.title("📊 Прогнозирование продаж товаров")
 
-# Создаём две колонки: левая (30% ширины) для ввода, правая (70%) для результатов
+# Левая и правая колонки
 left_col, right_col = st.columns([1, 2], gap="large")
 
-# ======================= ЛЕВАЯ КОЛОНКА (все поля ввода) =======================
+# ======================= ЛЕВАЯ КОЛОНКА =======================
 with left_col:
     st.subheader("Параметры прогноза")
     
@@ -32,7 +32,7 @@ with left_col:
     
     submitted = st.button("Рассчитать прогноз", type="primary", use_container_width=True)
 
-# ======================= ПРАВАЯ КОЛОНКА (результаты) =======================
+# ======================= ПРАВАЯ КОЛОНКА =======================
 with right_col:
     st.subheader("Результат прогноза")
     
@@ -47,42 +47,47 @@ with right_col:
             "temperature": temperature
         }
         try:
-            # Отправляем запрос к API (предполагается, что API запущен на localhost:8000)
             response = requests.post("http://localhost:8000/predict", json=payload, timeout=10)
             if response.status_code == 200:
                 result = response.json()
                 forecast = result['forecast_qty']
                 
-                # Отображаем крупно прогноз
-                st.metric(label="Прогноз продаж (шт.)", value=f"{forecast:.1f}")
+                # ----- ЕДИНСТВЕННЫЙ ВЫВОД ПРОГНОЗА (зелёный, с датой) -----
+                st.success(f"📅 На {date.strftime('%d.%m.%Y')} прогноз продаж: **{forecast:.1f} шт.**")
                 
-                # Получаем среднее значение для этого товара и магазина (нужно из данных)
-                # В MVP будем загружать сохранённое среднее из файла, если есть
+                # Получаем среднее значение (если нет файла — заглушка 40)
                 try:
                     df_avg = pd.read_csv('avg_sales.csv')
                     avg_key = f"{store_id}_{sku_id}"
                     avg_val = df_avg[df_avg['key'] == avg_key]['avg_qty'].values[0]
                 except:
-                    # Если файла нет — считаем среднее из сгенерированных данных (упрощённо)
-                    avg_val = 40.0  # заглушка, но можно пересчитать
+                    avg_val = 40.0  # заглушка
                 
-                # График: прогноз vs среднее
+                # ----- ГРАФИК (прогноз vs среднее) с подписями внутри столбцов -----
                 fig, ax = plt.subplots(figsize=(6, 4))
-                bars = ax.bar(["Прогноз", "Среднее (история)"], [forecast, avg_val], 
+                bars = ax.bar(["Прогноз", "Среднее (история)"], [forecast, avg_val],
                               color=['#2ecc71', '#95a5a6'])
                 ax.set_ylabel("Количество, шт")
                 ax.set_title("Сравнение прогноза со средними продажами")
-                # Подписываем значения на столбцах
+                
+                # Подписи значений — внутри столбцов (чуть ниже верхнего края)
                 for bar in bars:
                     height = bar.get_height()
-                    ax.annotate(f'{height:.1f}', xy=(bar.get_x() + bar.get_width()/2, height),
-                                xytext=(0, 3), textcoords="offset points", ha='center', va='bottom')
+                    # Если столбец очень низкий, подпись размещаем сверху, иначе внутри
+                    if height < 5:
+                        y_pos = height + 0.5
+                        va = 'bottom'
+                    else:
+                        y_pos = height - 2
+                        va = 'top'
+                    ax.annotate(f'{height:.1f}', xy=(bar.get_x() + bar.get_width()/2, y_pos),
+                                ha='center', va=va, fontsize=10, color='white' if height > 5 else 'black')
+                
+                # Ограничиваем ось Y, чтобы подписи не уезжали
+                ax.set_ylim(0, max(forecast, avg_val) * 1.1)
                 st.pyplot(fig)
                 
-                # Дополнительная информация
-                st.success(f"Прогноз на {date.strftime('%d.%m.%Y')}: **{forecast:.1f} шт.**")
-                
-                # Если прогноз значительно выше среднего — подсветим
+                # Дополнительная рекомендация (опционально, не дублирует прогноз)
                 if forecast > avg_val * 1.2:
                     st.info("📈 Ожидается повышенный спрос! Рекомендуется увеличить заказ.")
                 elif forecast < avg_val * 0.8:
@@ -97,7 +102,7 @@ with right_col:
     else:
         st.info("Заполните параметры слева и нажмите «Рассчитать прогноз».")
 
-# Для красоты добавим небольшую информацию в боковую панель (опционально)
+# Боковая панель (информация)
 with st.sidebar:
     st.markdown("### ℹ️ О системе")
     st.markdown("""
