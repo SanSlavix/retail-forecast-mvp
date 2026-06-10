@@ -1,55 +1,54 @@
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 import lightgbm as lgb
 import joblib
-from preprocessing import preprocess_pipeline
-from features import build_features
+from sklearn.model_selection import train_test_split
 
-# Загрузка и подготовка данных
+# Загрузка данных
 df = pd.read_csv('sales_train.csv')
-df = preprocess_pipeline(df)
-df = build_features(df)
+df['date'] = pd.to_datetime(df['date'])
 
-# Целевая переменная
-target = 'sales_qty'
+# Создание признаков из даты
+df['day_of_week'] = df['date'].dt.dayofweek
+df['month'] = df['date'].dt.month
+df['quarter'] = df['date'].dt.quarter
+df['year'] = df['date'].dt.year
 
-# Явно задаём порядок признаков (строго 18 признаков)
-feature_order = [
+# Кодирование категорий
+le_store = LabelEncoder()
+le_sku = LabelEncoder()
+df['store_encoded'] = le_store.fit_transform(df['store_id'])
+df['sku_encoded'] = le_sku.fit_transform(df['sku_id'])
+
+# Признаки (без лагов, только то, что есть во входных данных)
+feature_cols = [
     'store_encoded', 'sku_encoded', 'price', 'on_promotion', 'discount_percent',
-    'temperature', 'day_of_week', 'month', 'quarter', 'year',
-    'lag_1', 'lag_7', 'lag_14', 'lag_28',
-    'rolling_mean_7', 'rolling_mean_30', 'promo_previous_day', 'price_per_unit'
+    'temperature', 'day_of_week', 'month', 'quarter', 'year'
 ]
 
-# Убедимся, что все признаки присутствуют в датафрейме
-for col in feature_order:
-    if col not in df.columns:
-        raise ValueError(f"Column {col} not found in dataframe!")
-
-X = df[feature_order].values
-y = df[target].values
+X = df[feature_cols].values
+y = df['sales_qty'].values
 
 # Масштабирование
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
 
-# Сохраняем scaler и порядок признаков
+# Сохраняем всё для предсказаний
 joblib.dump(scaler, 'scaler.pkl')
-joblib.dump(feature_order, 'feature_order.pkl')   # <--- сохраняем порядок
+joblib.dump(feature_cols, 'feature_cols.pkl')
+joblib.dump(le_store, 'le_store.pkl')
+joblib.dump(le_sku, 'le_sku.pkl')
 
 # Обучение модели
 params = {
-    'num_leaves': 64,
-    'learning_rate': 0.05,
-    'n_estimators': 1500,
+    'num_leaves': 31,
+    'learning_rate': 0.1,
+    'n_estimators': 500,
     'subsample': 0.8,
-    'colsample_bytree': 0.7,
+    'colsample_bytree': 0.8,
     'reg_alpha': 0.1,
     'reg_lambda': 0.1,
-    'objective': 'quantile',
-    'alpha': 0.5,
     'verbose': -1
 }
 
@@ -59,18 +58,10 @@ model.fit(X_scaled, y, eval_metric='mape')
 joblib.dump(model, 'model.pkl')
 print("Model saved to model.pkl")
 
-# Оценка на последних 3 месяцах (примерно)
-split_date = '2025-10-01'
-train_mask = df['date'] < split_date
-test_mask = df['date'] >= split_date
-
-X_train = X_scaled[train_mask]
-y_train = y[train_mask]
-X_test = X_scaled[test_mask]
-y_test = y[test_mask]
-
+# Простая оценка на отложенной выборке
+X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
 model.fit(X_train, y_train)
 y_pred = model.predict(X_test)
-
 mape = np.mean(np.abs((y_test - y_pred) / y_test)) * 100
 print(f"Test MAPE: {mape:.2f}%")
+print(f"Пример предсказаний: {y_pred[:5]}, факт: {y_test[:5]}")
