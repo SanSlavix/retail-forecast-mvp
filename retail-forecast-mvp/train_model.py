@@ -14,18 +14,32 @@ df = build_features(df)
 
 # Целевая переменная
 target = 'sales_qty'
-feature_cols = [c for c in df.columns if c not in ['date', 'sales_qty', 'store_id', 'sku_id', 'store_encoded', 'sku_encoded']]
 
-X = df[feature_cols].values
+# Явно задаём порядок признаков (строго 18 признаков)
+feature_order = [
+    'store_encoded', 'sku_encoded', 'price', 'on_promotion', 'discount_percent',
+    'temperature', 'day_of_week', 'month', 'quarter', 'year',
+    'lag_1', 'lag_7', 'lag_14', 'lag_28',
+    'rolling_mean_7', 'rolling_mean_30', 'promo_previous_day', 'price_per_unit'
+]
+
+# Убедимся, что все признаки присутствуют в датафрейме
+for col in feature_order:
+    if col not in df.columns:
+        raise ValueError(f"Column {col} not found in dataframe!")
+
+X = df[feature_order].values
 y = df[target].values
 
-# Масштабирование числовых признаков
+# Масштабирование
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
-joblib.dump(scaler, 'scaler.pkl')
 
-# Временная кросс-валидация
-tscv = TimeSeriesSplit(n_splits=3)
+# Сохраняем scaler и порядок признаков
+joblib.dump(scaler, 'scaler.pkl')
+joblib.dump(feature_order, 'feature_order.pkl')   # <--- сохраняем порядок
+
+# Обучение модели
 params = {
     'num_leaves': 64,
     'learning_rate': 0.05,
@@ -39,16 +53,13 @@ params = {
     'verbose': -1
 }
 
-# Обучение финальной модели на всех данных
-print("Training LightGBM model...")
 model = lgb.LGBMRegressor(**params)
 model.fit(X_scaled, y, eval_metric='mape')
 
-# Сохранение модели
 joblib.dump(model, 'model.pkl')
 print("Model saved to model.pkl")
 
-# Оценка на последних 3 месяцах (простой холд-аут)
+# Оценка на последних 3 месяцах (примерно)
 split_date = '2025-10-01'
 train_mask = df['date'] < split_date
 test_mask = df['date'] >= split_date
@@ -61,6 +72,5 @@ y_test = y[test_mask]
 model.fit(X_train, y_train)
 y_pred = model.predict(X_test)
 
-# MAPE
 mape = np.mean(np.abs((y_test - y_pred) / y_test)) * 100
 print(f"Test MAPE: {mape:.2f}%")
