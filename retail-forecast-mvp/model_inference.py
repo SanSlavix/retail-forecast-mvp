@@ -4,16 +4,16 @@ import numpy as np
 
 model = joblib.load('model.pkl')
 scaler = joblib.load('scaler.pkl')
-feature_order = joblib.load('feature_order.pkl')   # загружаем порядок признаков
+feature_cols = joblib.load('feature_cols.pkl')
 le_store = joblib.load('le_store.pkl')
 le_sku = joblib.load('le_sku.pkl')
 
-def preprocess_input(data_dict):
+def predict(data_dict):
+    # Преобразование входных данных в признаки
     store_enc = le_store.transform([data_dict['store_id']])[0]
     sku_enc = le_sku.transform([data_dict['sku_id']])[0]
     date = pd.to_datetime(data_dict['date'])
-
-    # Словарь признаков точно в том же порядке
+    
     features = {
         'store_encoded': store_enc,
         'sku_encoded': sku_enc,
@@ -25,22 +25,10 @@ def preprocess_input(data_dict):
         'month': date.month,
         'quarter': date.quarter,
         'year': date.year,
-        'lag_1': 0,
-        'lag_7': 0,
-        'lag_14': 0,
-        'lag_28': 0,
-        'rolling_mean_7': 0,
-        'rolling_mean_30': 0,
-        'promo_previous_day': 0,
-        'price_per_unit': 1.0,
     }
-
-    # Используем точно тот же порядок, что и при обучении
-    X = np.array([[features[col] for col in feature_order]])
+    
+    # Собираем в правильном порядке
+    X = np.array([[features[col] for col in feature_cols]])
     X_scaled = scaler.transform(X)
-    return X_scaled
-
-def predict(data_dict):
-    X = preprocess_input(data_dict)
-    pred = model.predict(X)[0]
+    pred = model.predict(X_scaled)[0]
     return float(pred)
