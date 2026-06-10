@@ -1,9 +1,11 @@
+# api.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Dict
 import datetime
 import joblib
 import numpy as np
+import pandas as pd
 from model_inference import predict
 
 app = FastAPI(title="Retail Forecast API", version="1.0")
@@ -11,7 +13,8 @@ app = FastAPI(title="Retail Forecast API", version="1.0")
 class PredictionRequest(BaseModel):
     store_id: int = Field(..., ge=1, le=5)
     sku_id: int = Field(..., ge=1, le=100)
-    date: str = Field(..., regex=r'^\d{4}-\d{2}-\d{2}$')
+    # Исправлено: 'regex' заменён на 'pattern'
+    date: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
     price: float = Field(..., gt=0)
     on_promotion: bool = False
     discount_percent: int = Field(0, ge=0, le=50)
